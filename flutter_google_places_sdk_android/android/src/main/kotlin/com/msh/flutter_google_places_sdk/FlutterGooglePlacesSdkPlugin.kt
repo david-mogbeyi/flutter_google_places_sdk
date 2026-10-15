@@ -332,22 +332,22 @@ class FlutterGooglePlacesSdkPlugin : FlutterPlugin, MethodCallHandler {
 
         return mapOf(
             "id" to place.id,
-            "address" to place.address,
+            "address" to place.formattedAddress,
             "addressComponents" to place.addressComponents?.asList()
                 ?.map { addressComponentToMap(it) },
             "businessStatus" to place.businessStatus?.name,
             "attributions" to place.attributions,
-            "latLng" to latLngToMap(place.latLng),
-            "name" to place.name,
-            "nameLanguageCode" to place.nameLanguageCode,
+            "latLng" to latLngToMap(place.location),
+            "name" to place.displayName,
+            "nameLanguageCode" to place.displayNameLanguageCode,
             "openingHours" to openingHoursToMap(place.openingHours),
-            "phoneNumber" to place.phoneNumber,
+            "phoneNumber" to place.internationalPhoneNumber,
             "photoMetadatas" to place.photoMetadatas?.map { photoMetadataToMap(it) },
             "plusCode" to plusCodeToMap(place.plusCode),
             "priceLevel" to place.priceLevel,
             "rating" to place.rating,
             "types" to place.placeTypes,
-            "userRatingsTotal" to place.userRatingsTotal,
+            "userRatingsTotal" to place.userRatingCount,
             "utcOffsetMinutes" to place.utcOffsetMinutes,
             "viewport" to latLngBoundsToMap(place.viewport),
             "websiteUri" to place.websiteUri?.toString(),
@@ -504,7 +504,11 @@ class FlutterGooglePlacesSdkPlugin : FlutterPlugin, MethodCallHandler {
             "primaryText" to result.getPrimaryText(null).toString(),
             "secondaryText" to result.getSecondaryText(null).toString(),
             "fullText" to result.getFullText(null).toString(),
-            "placeTypes" to result.placeTypes?.map { it.name }
+            // Places SDK 5.1.1 removed the typed Place.Type enum from
+            // AutocompletePrediction (now exposes raw string "types" instead,
+            // which don't map to the platform interface's List<PlaceType>?),
+            // so this field is left absent/null as upstream 0.3.0 also does.
+            "placeTypes" to null
         )
     }
 
