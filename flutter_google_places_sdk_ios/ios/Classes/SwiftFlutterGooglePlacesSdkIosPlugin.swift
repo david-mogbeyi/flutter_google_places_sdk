@@ -2,6 +2,12 @@ import Flutter
 import UIKit
 import GooglePlaces
 
+private let ALL_PLACE_FIELDS: [String] = [
+    "ADDRESS", "ADDRESS_COMPONENTS", "BUSINESS_STATUS", "ID", "LAT_LNG", "NAME",
+    "OPENING_HOURS", "PHONE_NUMBER", "PHOTO_METADATAS", "PLUS_CODE", "PRICE_LEVEL",
+    "RATING", "TYPES", "USER_RATINGS_TOTAL", "UTC_OFFSET", "VIEWPORT", "WEBSITE_URI",
+]
+
 public class SwiftFlutterGooglePlacesSdkIosPlugin: NSObject, FlutterPlugin {
     static let CHANNEL_NAME = "plugins.msh.com/flutter_google_places_sdk"
     let METHOD_INITIALIZE = "initialize"
@@ -46,7 +52,7 @@ public class SwiftFlutterGooglePlacesSdkIosPlugin: NSObject, FlutterPlugin {
             let locationBias = rectangularBoundsFromMap(argument: args["locationBias"] as? Dictionary<String, Any?>)
             let locationRestriction = rectangularBoundsFromMap(argument: args["locationRestriction"] as? Dictionary<String, Any?>)
             let sessionToken = getSessionToken(force: newSessionToken == true)
-            
+
             // Create a type filter.
             let filter = GMSAutocompleteFilter()
             filter.types = placeTypeFilters;
@@ -55,8 +61,12 @@ public class SwiftFlutterGooglePlacesSdkIosPlugin: NSObject, FlutterPlugin {
             filter.locationBias = locationBias
             filter.locationRestriction = locationRestriction
 
-            placesClient.findAutocompletePredictions(
-                fromQuery: query, filter: filter, sessionToken: sessionToken,
+            let request = GMSAutocompleteRequest(query: query)
+            request.sessionToken = sessionToken
+            request.filter = filter
+
+            placesClient.fetchAutocompleteSuggestions(
+                from: request,
                 callback: { (results, error) in
                     if let error = error {
                         print("findAutoCompletePredictions error: \(error)")
@@ -67,24 +77,28 @@ public class SwiftFlutterGooglePlacesSdkIosPlugin: NSObject, FlutterPlugin {
                         ))
                     } else {
                         self.lastSessionToken = sessionToken
-                        let mappedResult = self.responseToList(results: results)
+                        let mappedResult = self.suggestionsToList(results: results)
                         result(mappedResult)
                     }
                 })
         case METHOD_FETCH_PLACE:
             let args = call.arguments as! Dictionary<String,Any>
             let placeId = args["placeId"] as! String
-            let fields = ((args["fields"] as? [String])?.map {
-                (item) in return placeFieldFromStr(it: item)
-            })?.reduce(GMSPlaceField(), { partialResult, field in
-                return GMSPlaceField(rawValue: partialResult.rawValue | field.rawValue)
-            })
+            let requestedFields = args["fields"] as? [String] ?? ALL_PLACE_FIELDS
+            var properties: [GMSPlaceProperty] = []
+            for field in requestedFields {
+                properties.append(placePropertyFromStr(it: field))
+            }
             let newSessionToken = args["newSessionToken"] as? Bool ?? false
             let sessionToken = getSessionToken(force: newSessionToken == true)
-            
-            placesClient.fetchPlace(fromPlaceID: placeId,
-                                    placeFields: fields ?? GMSPlaceField.all,
-                                    sessionToken: sessionToken) { (place, error) in
+
+            let fetchPlaceRequest = GMSFetchPlaceRequest(
+                placeID: placeId,
+                placeProperties: properties.map { $0.rawValue },
+                sessionToken: sessionToken
+            )
+
+            placesClient.fetchPlace(with: fetchPlaceRequest) { (place, error) in
                 if let error = error {
                     print("fetchPlace error: \(error)")
                     result(FlutterError(
@@ -271,47 +285,52 @@ public class SwiftFlutterGooglePlacesSdkIosPlugin: NSObject, FlutterPlugin {
       ]
     }
     
-    private func placeFieldFromStr(it: String) -> GMSPlaceField {
+    private func placePropertyFromStr(it: String) -> GMSPlaceProperty {
         switch (it) {
-        case "ADDRESS": return GMSPlaceField.formattedAddress
-        case "ADDRESS_COMPONENTS": return GMSPlaceField.addressComponents
-        case "BUSINESS_STATUS": return GMSPlaceField.businessStatus
-        case "ID": return GMSPlaceField.placeID
-        case "LAT_LNG": return GMSPlaceField.coordinate
-        case "NAME": return GMSPlaceField.name
-        case "OPENING_HOURS": return GMSPlaceField.openingHours
-        case "PHONE_NUMBER": return GMSPlaceField.phoneNumber
-        case "PHOTO_METADATAS": return GMSPlaceField.photos
-        case "PLUS_CODE": return GMSPlaceField.plusCode
-        case "PRICE_LEVEL": return GMSPlaceField.priceLevel
-        case "RATING": return GMSPlaceField.rating
-        case "TYPES": return GMSPlaceField.types
-        case "USER_RATINGS_TOTAL": return GMSPlaceField.userRatingsTotal
-        case "UTC_OFFSET": return GMSPlaceField.utcOffsetMinutes
-        case "VIEWPORT": return GMSPlaceField.viewport
-        case "WEBSITE_URI": return GMSPlaceField.website
+        case "ADDRESS": return GMSPlaceProperty.formattedAddress
+        case "ADDRESS_COMPONENTS": return GMSPlaceProperty.addressComponents
+        case "BUSINESS_STATUS": return GMSPlaceProperty.businessStatus
+        case "ID": return GMSPlaceProperty.placeID
+        case "LAT_LNG": return GMSPlaceProperty.coordinate
+        case "NAME": return GMSPlaceProperty.name
+        case "OPENING_HOURS": return GMSPlaceProperty.openingHours
+        case "PHONE_NUMBER": return GMSPlaceProperty.phoneNumber
+        case "PHOTO_METADATAS": return GMSPlaceProperty.photos
+        case "PLUS_CODE": return GMSPlaceProperty.plusCode
+        case "PRICE_LEVEL": return GMSPlaceProperty.priceLevel
+        case "RATING": return GMSPlaceProperty.rating
+        case "TYPES": return GMSPlaceProperty.types
+        case "USER_RATINGS_TOTAL": return GMSPlaceProperty.userRatingsTotal
+        case "UTC_OFFSET": return GMSPlaceProperty.utcOffsetMinutes
+        case "VIEWPORT": return GMSPlaceProperty.viewport
+        case "WEBSITE_URI": return GMSPlaceProperty.website
         default:
             fatalError("Invalid placeField: \(it)")
         }
     }
-    
-    private func responseToList(results: [GMSAutocompletePrediction]?) -> [Dictionary<String, Any?>]? {
+
+    private func suggestionsToList(results: [GMSAutocompleteSuggestion]?) -> [Dictionary<String, Any?>]? {
         guard let results = results else {
             return nil;
         }
-        
-        return results.map { (prediction: GMSAutocompletePrediction) in
-            return predictionToMap(prediction: prediction) }
+
+        return results.compactMap { (suggestion: GMSAutocompleteSuggestion) in
+            return suggestion.placeSuggestion.map { suggestionToMap(suggestion: $0) }
+        }
     }
-    
-    private func predictionToMap(prediction: GMSAutocompletePrediction) -> Dictionary<String, Any?> {
+
+    private func suggestionToMap(suggestion: GMSAutocompletePlaceSuggestion) -> Dictionary<String, Any?> {
+        // placeTypes is omitted: Places API (New) returns place types (e.g.
+        // "non_profit_organization") that the Dart-side PlaceType enum,
+        // generated against the legacy API's fixed type list, doesn't
+        // recognize, and its fromJson throws on any unknown value. No caller
+        // in this app reads placeTypes.
         return [
-            "placeId": prediction.placeID,
-            "distanceMeters": prediction.distanceMeters,
-            "primaryText": prediction.attributedPrimaryText.string,
-            "secondaryText": prediction.attributedSecondaryText?.string ?? "",
-            "fullText": prediction.attributedFullText.string,
-            "placeTypes": prediction.types.map { (it) in return it.uppercased() }
+            "placeId": suggestion.placeID,
+            "distanceMeters": suggestion.distanceMeters,
+            "primaryText": suggestion.attributedPrimaryText.string,
+            "secondaryText": suggestion.attributedSecondaryText?.string ?? "",
+            "fullText": suggestion.attributedFullText.string,
         ];
     }
 
