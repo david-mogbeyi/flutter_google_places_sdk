@@ -310,8 +310,13 @@ class FlutterGooglePlacesSdkPlugin : FlutterPlugin, MethodCallHandler {
     }
 
     private fun placeFieldFromStr(it: String): Place.Field {
+        // flutter_google_places_sdk_platform_interface's PlaceField enum map is
+        // generated against the pre-5.1.1 Place.Field names and hasn't been
+        // regenerated; LAT_LNG is the only one this app ever requests
+        // (Place.Field.LOCATION since 5.1.1).
+        val name = if (it == "LAT_LNG") "LOCATION" else it
         try {
-            return Place.Field.valueOf(it)
+            return Place.Field.valueOf(name)
         } catch (e: IllegalArgumentException) {
             throw IllegalArgumentException("Invalid placeField: $it")
         }
